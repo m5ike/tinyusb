@@ -1,0 +1,114 @@
+#include <stdio.h>
+#include "string.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "usb/usb_host.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <sys/unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <esp_vfs_fat.h>
+#include "nvs_flash.h"
+#include "usbip.hpp"
+
+extern "C" void start_server();
+USBhost* host;
+static USBipDevice* device;
+static bool is_ready = false;
+static USBIP usbip;
+
+const int BOOT_SWITCH_PIN = GPIO_NUM_0; // Example GPIO pin for the BOOT switch
+
+void client_event_callback(const usb_host_client_event_msg_t *event_msg, void *arg)
+{
+    ESP_LOGW("", "usb_host_client_event_msg_t event: %d", event_msg->event);
+    if (event_msg->event == USB_HOST_CLIENT_EVENT_NEW_DEV)
+    {
+        host->open(event_msg);
+
+        info = host->getDeviceInfo();
+        ESP_LOGI("USB_HOST_CLIENT_EVENT_NEW_DEV", "device speed: %s, device address: %d, max ep_ctrl size: %d, config: %d", info.speed ? "USB_SPEED_FULL" : "USB_SPEED_LOW", info.dev_addr, info.bMaxPacketSize0, info.bConfigurationValue);
+        dev_desc = host->getDeviceDescriptor();
+        
+        device = new USBipDevice();
+        device->init(host);
+
+        is_ready = true;
+    }
+    else
+    {
+        // TODO: release all interfaces claimed in device.init
+        is_ready = false;
+        device->deinit();
+        delete(device);
+    }
+}
+
+void init_usbip()
+{
+    host = new USBhost();
+    host->registerClientCb(client_event_callback);
+    host->init();
+}
+
+extern "C" void app_main(void)
+{
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    esp_log_level_set("*", ESP_LOG_NONE);
+    // esp_log_level_set("USB_EPx_RESP", ESP_LOG_NONE);
+    // esp_log_level_set("example", ESP_LOG_INFO);
+    init_usbip();
+
+    start_server();
+}
+
+void toggle_mode()
+{
+    static bool is_setup_mode = false;
+
+    // Read the state of the BOOT switch
+    int boot_switch_state = gpio_get_level(BOOT_SWITCH_PIN);
+
+    if (boot_switch_state == 0) { // BOOT switch pressed
+        is_setup_mode = !is_setup_mode;
+    }
+
+    if (is_setup_mode) {
+        // Setup mode
+        ESP_LOGI("Mode", "Setup Mode");
+        // Implement setup mode logic here
+        // For example, toggle between different settings modes
+    } else {
+        // Standard operation mode or normal operation mode with HTTP server
+        ESP_LOGI("Mode", "Standard Operation Mode or Normal Operation Mode with HTTP Server");
+        // Implement standard operation mode or normal operation mode with HTTP server logic here
+    }
+}
+
+void init_boot_switch()
+{
+    gpio_set_direction(BOOT_SWITCH_PIN, GPIO_MODE_INPUT);
+    gpio_pull_up(BOOT_SWITCH_PIN); // Pull up to read the state of the BOOT switch
+}
+
+extern "C" void app_main(void)
+{
+    esp_log_level_set("*", ESP_LOG_ERROR);
+    esp_log_level_set("*", ESP_LOG_NONE);
+    // esp_log_level_set("USB_EPx_RESP", ESP_LOG_NONE);
+    // esp_log_level_set("example", ESP_LOG_INFO);
+    init_usbip();
+
+    init_boot_switch();
+
+    while (1) {
+        toggle_mode();
+        vTaskDelay(100); // Delay to avoid busy loop
+    }
+}
