@@ -42,6 +42,10 @@ static usb_transfer_t* _transfer [[maybe_unused]] = nullptr;
 
 #include "esp_netif.h"
 #include "esp_wifi.h"
+#include "esp_netif.h"
+#include "esp_netif_types.h"
+#include <inttypes.h>
+#include <cinttypes>
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "usb/usb_host.h"      // for usb_host_config_t, usb_host_* APIs
@@ -208,7 +212,7 @@ static void cdc_write(const char* s) {
     size_t len = strlen(s);
     size_t written = 0;
     tusb_cdc_acm_write(g_cdc, (uint8_t*)s, len, &written);
-    tusb_cdc_acm_write_flush(g_cdc, 0);  // 0 = default timeout
+    tinyusb_cdcacm_write_flush(g_cdc, 0);  // 0 = default timeout
 }
 
 static void cdc_writeln(const char* s) {

@@ -1,0 +1,173 @@
+diff --git a/esp32-usbip-poc/main/usbip.cpp b/esp32-usbip-poc/main/usbip.cpp
+index 1111111..2222222 100644
+--- a/esp32-usbip-poc/main/usbip.cpp
++++ b/esp32-usbip-poc/main/usbip.cpp
+@@ -1,8 +1,10 @@
+ #include <cstring>
+ #include <cstdlib>
+ #include <sys/param.h>
+ #include "esp_log.h"
+-#include "esp_event.h
++#include "esp_event.h"
++#include <inttypes.h>
++#include <cinttypes>
+ 
+ // ... zbytek include listu zůstává ...
+ 
+@@ -218,7 +220,7 @@ void _event_handler1(void* arg, esp_event_base_t base, int32_t id, void* event_d
+             // původně: ESP_LOGW(TAG, "request ep: %d", __bswap_32(req->header.ep));
+-            ESP_LOGW(TAG, "request ep: %d", __bswap_32(req->header.ep));
++            ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(req->header.ep));
+             // (stejné upozornění platí i pro další ESP_LOG* s %d a 32-bit unsigned)
+         }
+     }
+diff --git a/esp32-usbip-poc/main/main.cpp b/esp32-usbip-poc/main/main.cpp
+index 3333333..4444444 100644
+--- a/esp32-usbip-poc/main/main.cpp
++++ b/esp32-usbip-poc/main/main.cpp
+@@ -7,12 +7,16 @@
+ #include <string>
+ #include <cstdio>
+ #include <cstring>
++#include <inttypes.h>
++#include <cinttypes>
+ 
+ #include "esp_log.h"
+ #include "nvs_flash.h"
+ #include "nvs.h"
+ #include "esp_event.h"
+ #include "esp_wifi.h"
++#include "esp_netif.h"
++#include "esp_netif_types.h"
+ 
+ // TinyUSB / esp_tinyusb
+ #include "tusb_cdc_acm.h"
+@@ -29,18 +33,21 @@ static const char *TAG = "usb_host_arduino";
+ // Původně:
+-#define UNUSED(x) (x)
+-UNUSED(finished);
+-UNUSED(is_ready);
+-UNUSED(last_seqnum);
+-UNUSED(_transfer);
++// UNUSED makro může zůstat, ale nesmí se volat na globálním scope jako výraz.
++#define UNUSED(x) ((void)(x))
+ 
+ // Pokud potřebujeme potlačit varování na několik statických symbolů, uděláme to uvnitř funkce:
+ static void suppress_unused_warnings(void)
+ {
+-    // (přiřaď sem cokoliv, co je aktuálně nepoužité)
++    extern bool finished;
++    extern bool is_ready;
++    extern uint32_t last_seqnum;
++    extern struct usb_transfer_t* _transfer;
++    UNUSED(finished);
++    UNUSED(is_ready);
++    UNUSED(last_seqnum);
++    UNUSED(_transfer);
+ }
+ 
+-// ...
++// ---------- esp_netif helper callback musí být na file-scope a MUSÍ vracet int ----------
++static int iterate_cb(void *ctx) { UNUSED(ctx); return 0; }
+ 
+ // ---------- CDC helpery ----------
+-// Původně volání write_flush přes tusb_* API
+ static std::string read_line_cdc()
+ {
+     std::string out;
+@@ -184,13 +191,13 @@ static std::string read_line_cdc()
+         int got = 0;
+-        if (tusb_cdc_acm_available(g_cdc)) {
+-            if (tusb_cdc_acm_read(g_cdc, &ch, 1, &got) == ESP_OK && got == 1) {
++        if (tusb_cdc_acm_available(g_cdc)) {
++            if (tusb_cdc_acm_read(g_cdc, &ch, 1, &got) == ESP_OK && got == 1) {
+                 if (ch == '\n' || ch == '\r') break;
+                 out.push_back(ch);
+             }
+         }
+     }
+     return out;
+ }
+ 
+ static void cdc_write(const char* s)
+ {
+     size_t len = strlen(s);
+     size_t written = 0;
+-    tusb_cdc_acm_write(g_cdc, (uint8_t*)s, len, &written);
+-    tusb_cdc_acm_write_flush(g_cdc, 0);  // 0 = default timeout
++    tusb_cdc_acm_write(g_cdc, (uint8_t*)s, len, &written);
++    // v esp_tinyusb v1.7+ se flush jmenuje tinyusb_cdcacm_write_flush
++    tinyusb_cdcacm_write_flush(g_cdc, 0);  // 0 = default timeout
+ }
+ 
+@@ -286,14 +293,14 @@ static void tinyusb_init_cdc()
+ {
+-    tusb_cdc_acm_config_t cdc_cfg = {
++    tusb_cdc_acm_config_t cdc_cfg = {   // typ je správně, ale potřebujeme mít povolený CDC driver v menuconfig
+         .usb_dev = TINYUSB_USBDEV_0,
+         .cdc_port = TINYUSB_CDC_ACM_0,
+         .rx_unread_buf_sz = 256,
+         .callback_rx = NULL,
+         .callback_rx_wanted_char = NULL,
+         .callback_line_state_changed = NULL,
+         .callback_line_coding_changed = NULL
+     };
+     ESP_ERROR_CHECK(tusb_cdc_acm_init(&cdc_cfg, &g_cdc));
+ }
+ 
+@@ -420,13 +427,16 @@ static void wifi_start_station()
+ {
+     // ... init netif + wifi ...
+-    // Původně definice iterate_cb byla uvnitř této funkce, což v C nejde.
+-    // A navíc esp_netif_tcpip_exec vyžaduje návratový typ int.
+-    ESP_ERROR_CHECK(esp_netif_tcpip_exec(iterate_cb, NULL));
++    ESP_ERROR_CHECK(esp_netif_tcpip_exec(iterate_cb, NULL));
+ }
+ 
+ extern "C" void app_main(void)
+ {
++    suppress_unused_warnings();
+     // ... původní obsah ...
+ }
+diff --git a/esp32-usbip-poc/partitions.csv b/esp32-usbip-poc/partitions.csv
+index 5555555..6666666 100644
+--- a/esp32-usbip-poc/partitions.csv
++++ b/esp32-usbip-poc/partitions.csv
+@@ -1,6 +1,8 @@
+-# Name,   Type, SubType, Offset,  Size, Flags
+-nvs,      data, nvs,     0x9000,  24K,
+-phy_init, data, phy,     0xF000,   4K,
+-ota_0,    app,  ota_0,   0x10000,  2M,
+-ota_1,    app,  ota_1,            2M,
+-storage,  data, spiffs,           1M,
++# Name,     Type, SubType, Offset,   Size,  Flags
++nvs,        data, nvs,     0x9000,    24K,
++otadata,    data, ota,     0xE000,     8K,
++phy_init,   data, phy,     0xF000,     4K,
++ota_0,      app,  ota_0,   0x10000,    4M,
++ota_1,      app,  ota_1,            ,  4M,
++storage,    data, spiffs,          ,   3M,
++# (pro 16MB flash; zbytek necháváme volný)
+diff --git a/esp32-usbip-poc/sdkconfig.defaults b/esp32-usbip-poc/sdkconfig.defaults
+index 7777777..8888888 100644
+--- a/esp32-usbip-poc/sdkconfig.defaults
++++ b/esp32-usbip-poc/sdkconfig.defaults
+@@ -1,4 +1,16 @@
+-# původní obsahy + nefunkční symboly TINYUSB/TINYUSB_DEVICE_ENABLED
++# Target
++CONFIG_IDF_TARGET="esp32s3"
++CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
++CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
++
++# TinyUSB – správné symboly pro IDF 5.4
++CONFIG_TINYUSB_ENABLED=y
++CONFIG_TINYUSB_DEVICE_ENABLED=y
++CONFIG_TINYUSB_CDC_ENABLED=y
++CONFIG_TINYUSB_DESC_USE_ESPRESSIF_VID_PID=y
++
++# USB Host (pokud používáš host stack)
++CONFIG_USB_HOST_ENABLED=y
++CONFIG_USB_HOST_DEBOUNCE_DELAY_MS=50
+ 
+ # Wi-Fi STA defaulty (volitelné)
+ CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=6

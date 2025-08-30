@@ -3,6 +3,8 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_event.h"
+#include <inttypes.h>
+#include <cinttypes>
 // #include "byteswap.h"
 #include <stdint.h>
 
@@ -224,7 +226,7 @@ static void _event_handler1(void* event_handler_arg, esp_event_base_t event_base
 
             memcpy(req, _req, 0x30 + tl);
             
-            ESP_LOGW(TAG, "request ep: %d", __bswap_32(req->header.ep));
+            ESP_LOGW(TAG, "request ep: %" PRIu32", (uint32_t)__bswap_32(req->header.ep));
             int tlen = 0;
 
             if(req->header.ep == 0) // EP0
