@@ -1,0 +1,106 @@
+diff --git a/main/main.cpp b/main/main.cpp
+index 0000000..0000000 100644
+--- a/main/main.cpp
++++ b/main/main.cpp
+@@ -1,15 +1,36 @@
+ #include <cstdio>
+ #include <cstring>
+ #include <string>
++#include <inttypes.h>
+ 
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+ #include "esp_log.h"
+ #include "esp_err.h"
+ #include "nvs_flash.h"
+ #include "nvs.h"
+ #include "esp_wifi.h"
++#include "esp_check.h"
++#include "usb/usb_host.h"
++
++// tinyusb CDC-ACM je C API – v C++ nutné ovinout do extern "C"
++extern "C" {
++#include "tusb_cdc_acm.h"
++}
+ 
+ // ... (původní kód/definice)
+ 
++// Doplň chybějící symboly používané níže
++static void client_event_callback(const usb_host_client_event_msg_t *msg, void *arg)
++{
++    (void)msg; (void)arg;
++}
++static usb_host_client_handle_t client_hdl = nullptr;
++
++// Handle pro CDC-ACM (typ je v tusb_cdc_acm.h)
++static tusb_cdcacm_handle_t g_cdc;
++
+@@ -190,7 +211,7 @@ std::string read_line_cdc() {
+     // ...
+ }
+ 
+ void cdc_write(const char* s)
+ {
+     size_t len = strlen(s);
+     size_t written = 0;
+-    tusb_cdc_acm_write(g_cdc, (uint8_t*)s, len, &written);
+-    tusb_cdc_acm_write_flush(g_cdc, 0);
++    tusb_cdc_acm_write(g_cdc, (uint8_t*)s, len, &written);
++    tinyusb_cdcacm_write_flush(g_cdc, 0); // wrapper flush v esp_tinyusb
+ }
+ 
+@@ -296,6 +317,7 @@ static void tinyusb_init_cdc()
+ {
+     // Konfigurace CDC-ACM
+-    tusb_cdc_acm_config_t cdc_cfg = {
++    tusb_cdc_acm_config_t cdc_cfg = {
+         // (ponech tvé původní členy – patch žádné nemaže)
+     };
+     ESP_ERROR_CHECK(tusb_cdc_acm_init(&cdc_cfg, &g_cdc));
+ }
+ 
+diff --git a/main/usbip.cpp b/main/usbip.cpp
+index 0000000..0000000 100644
+--- a/main/usbip.cpp
++++ b/main/usbip.cpp
+@@ -1,11 +1,13 @@
+ #include <cstring>
+ #include <cstdio>
++#include <inttypes.h>
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+ #include "esp_log.h"
+ #include "esp_err.h"
+ #include "usb/usb_host.h"
+ 
+-ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(req->header.ep));
++// POZOR: žádné ESP_LOG* mimo těla funkcí – to tady rozbíjelo překlad
++// (původní „toulavý“ log byl odstraněn)
+ 
+ // ... (původní kód)
+ 
+@@ -220,13 +222,13 @@ static void _event_handler1(void* event_handler_arg, esp_event_base_t event_base
+     case USBIP_CMD_SUBMIT:{
+         USBipDevice* dev = (USBipDevice*)event_handler_arg;
+         auto *data = (some_type*)event_data;
+         auto *__req = (usbip_submit_t*)data->buf;
+-        {
+-            ESP_LOGW(TAG, "request ep: %" PRIu32", (uint32_t)__bswap_32(req->header.ep));
+-        }
++        {
++            // OPRAVA formátu: uvozovka nesmí dělit makro PRIu32
++            ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(__req->header.ep));
++        }
+         // ...
+     } break;
+ 
+     default:
+         break;
+@@ -560,6 +562,6 @@ USBIP::USBIP() { /* ... */ }
+ 
+ USBIP::~USBIP() {}
+ 
+-// (žádné nedokončené makra ani chybějící závorky)
++// (bez nedokončených maker a chybějících závorek)
+ 
+ // ... (zbytek kódu beze změny)

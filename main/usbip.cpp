@@ -16,7 +16,7 @@ static inline uint64_t bswap64(uint64_t v) { return __builtin_bswap64(v); }
 
 // ...
 //ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(req->header.ep));
-ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(req->header.ep));
+//ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(req->header.ep));
 
 #include "lwip/err.h"
 #include "lwip/sockets.h"
@@ -226,8 +226,11 @@ static void _event_handler1(void* event_handler_arg, esp_event_base_t event_base
 
             memcpy(req, _req, 0x30 + tl);
             
-            ESP_LOGW(TAG, "request ep: %" PRIu32", (uint32_t)__bswap_32(req->header.ep));
+            ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(__req->header.ep));
             int tlen = 0;
+
+  //              ESP_LOGW(TAG, "request ep: %" PRIu32, (uint32_t)__bswap_32(req->header.ep));
+  //          int tlen = 0;
 
             if(req->header.ep == 0) // EP0
             {

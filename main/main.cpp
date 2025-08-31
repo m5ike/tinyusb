@@ -67,9 +67,21 @@ static usb_transfer_t* _transfer [[maybe_unused]] = nullptr;
 
 #include "esp_check.h"        // ESP_RETURN_ON_ERROR
 #include "usb/usb_host.h"     // usb_transfer_t
-#include "tusb_cdc_acm.h"     // tusb_cdcacm_handle_t + API
+
+extern "C" {
+#include "tusb_cdc_acm.h"
+}
 
 #include "class/cdc/cdc_device.h"
+
+static void client_event_callback(const usb_host_client_event_msg_t *msg, void *arg)
+{
+    (void)msg; (void)arg;
+}
+static usb_host_client_handle_t client_hdl = nullptr;
+
+// handle pro CDC (typ je z tusb_cdc_acm.h)
+static tusb_cdcacm_handle_t g_cdc;
 
 static const char* TAG = "APP";
 
